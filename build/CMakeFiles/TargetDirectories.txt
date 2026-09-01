@@ -1,3 +1,0 @@
-/home/khanh/project/ncurses/musicli/build/CMakeFiles/musicli.dir
-/home/khanh/project/ncurses/musicli/build/CMakeFiles/edit_cache.dir
-/home/khanh/project/ncurses/musicli/build/CMakeFiles/rebuild_cache.dir

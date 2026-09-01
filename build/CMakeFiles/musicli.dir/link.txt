@@ -1,1 +1,0 @@
-/usr/bin/cc -g -fsanitize=address -fno-omit-frame-pointer -Wl,--dependency-file=CMakeFiles/musicli.dir/link.d CMakeFiles/musicli.dir/src/config.c.o CMakeFiles/musicli.dir/src/utils.c.o CMakeFiles/musicli.dir/src/ui.c.o CMakeFiles/musicli.dir/src/main.c.o -o musicli  /usr/lib/libluajit-5.1.so /usr/lib/libncursesw.so
