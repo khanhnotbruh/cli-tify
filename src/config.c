@@ -1,11 +1,7 @@
-#include <luajit-2.1/lua.h>
-#include <luajit-2.1/lualib.h>
-#include <luajit-2.1/lauxlib.h>
-#include <string.h>
-#include <stddef.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
 #include "global_var.h"
 #include "helper.h"
 #include "config.h"
@@ -37,7 +33,7 @@ static int getRegVal(lua_State*L,int ref,const char*inp[],uint64_t size,int*out)
   while(lua_next(L,idx)!=0){
     if(lua_type(L,-2)!=LUA_TSTRING){
       logError(L,"unknown key type in config table(expected string)");
-      lua_settop(L,idx);
+      lua_settop(L,idx-1);
       return 0;
     }
     const char*key=lua_tostring(L,-2);
@@ -50,12 +46,12 @@ static int getRegVal(lua_State*L,int ref,const char*inp[],uint64_t size,int*out)
       }
     }
     logError(L,"unexpected key in config table (a value set twice or unknow key)");
-    lua_settop(L,idx);
+    lua_settop(L,idx-1);
     return 0;
 next_cycle:
     lua_pop(L,1);
   }
-  lua_settop(L,idx);
+  lua_settop(L,idx-1);
   return 1;
 }
 
@@ -285,10 +281,16 @@ cleanup:
   }
   return error;
 }
+// idx is the table idx
 int assignWidget(app_state_t*app,widget_t*parent,int idx){
   lua_State*L=app->L;
+  idx=lua_absindex(L,idx);
   lua_pushnil(L);
   while(lua_next(L,idx)!=0){
+    if(lua_type(L,-2)==LUA_TNUMBER){
+      lua_pop(L,1);
+      continue;
+    }
     if(lua_type(L,-2)!=LUA_TSTRING){
       logError(L,"unknown key type in config table(expected string)");
       lua_settop(L,idx);
@@ -297,6 +299,7 @@ int assignWidget(app_state_t*app,widget_t*parent,int idx){
     const char *key=lua_tostring(L,-2);
     uint64_t size=strlen(key);
     if(lua_istable(L,-1)){
+      lua_pushvalue(L,-1);
       int conf_ref=luaL_ref(L,LUA_REGISTRYINDEX);
       if(size==6&&!strcmp(key,"config")){
         if(!assignConfig(app,parent,conf_ref)){
@@ -313,14 +316,14 @@ int assignWidget(app_state_t*app,widget_t*parent,int idx){
           return 0;
         }
       }else{
-        logError(L, "unknown property table '%s' at line/context",key);
+        logError(L, "unknown property table '%s'",key);
         luaL_unref(L,LUA_REGISTRYINDEX,conf_ref);
         lua_settop(L,idx);
         return 0;
       }
       luaL_unref(L,LUA_REGISTRYINDEX,conf_ref);
     }else{
-      logError(L, "expected table for property '%s' at line/context,got %s",key,lua_typename(L,-1));
+      logError(L, "expected table for property '%s',got %s",key,lua_typename(L,-1));
       lua_settop(L,idx);
       return 0;
     }
@@ -331,7 +334,7 @@ int assignWidget(app_state_t*app,widget_t*parent,int idx){
 }
 static int l_widget(lua_State*L){
   if(!lua_istable(L,1)){
-    return luaL_error(L,"expected table for 'Widget' at line/context,got %s",luaL_typename(L,1));
+    return luaL_error(L,"expected table for 'Widget', got %s",luaL_typename(L,1));
   }
   lua_pushstring(L,"app_state");
   lua_gettable(L,LUA_REGISTRYINDEX);
@@ -342,7 +345,6 @@ static int l_widget(lua_State*L){
     fprintf(stderr,"ERROR: failed creating widget\n");
     return 0;
   }
-  if(!app->screen->child)app->screen->child=parent;
   uint64_t child_cnt=lua_rawlen(L,1);
   widget_t*prev=0;
   for(uint64_t i=1;i<=child_cnt;i++){
@@ -360,34 +362,90 @@ static int l_widget(lua_State*L){
     }
     lua_pop(L,1);
   }
+  if(!app->screen->child)app->screen->child=parent;
+  else if(app->screen->child==parent->child)app->screen->child=parent;
   int argc=assignWidget(app,parent,1);
   if(!argc) fprintf(stderr, "ERROR: unable to apply config to widget\n");
   return argc;
 }
-int initializeApp(app_state_t *app){
-  memory_t*mem=malloc(sizeof(memory_t));
-  if(!mem){
-    fprintf(stderr,"error failed allocating memory\n");
-    return 0;
-  }
-  mem->cnt=0;mem->size=1024;
-  mem->buf=malloc(mem->size);
-  if(!mem->buf){
-    fprintf(stderr,"error failed allocating memory\n");
-    return 0;
-  }
-  mem->next=0;
-  app->mem[ROOT]=mem;
-  app->mem[CURR]=mem;
-  widget_t*screen=malloc(sizeof(widget_t));
-  if(!screen){
-    fprintf(stderr,"error failed allocating memory\n");
-    return 0;
-  }
-  memset(screen,0,sizeof(widget_t));
-  app->screen=screen;
+
+#define DUMP(name,frm,level,max,...)do{\
+  int _len=(int)sizeof(#name)- 1;\
+  int _pad=((max)> _len)?((max)- _len): 0;\
+  fprintf(stdout,"%*s%s%*s: " frm "\n",\
+      (level),"",#name,_pad,"",__VA_ARGS__);\
+}while(0)
+#define DUMP_STR(name,level,max,arg) do{\
+  char*_tmp=readStringT(arg);\
+  DUMP(name,"%s",level,max,_tmp?_tmp:"(null)");\
+  free(_tmp);\
+}while(0)
+
+int dumpConfig(struct config_s *conf,int level){
+  if(!conf)return 0;
+  int M=15;
+  DUMP(id,"%llu",level,M,(unsigned long long)conf->id);
+  DUMP(anchors,"%s",level,M,"");
+  DUMP(left,"%llu",level+2,M,(unsigned long long)conf->anchors[LEFT]);
+  DUMP(right,"%llu",level+2,M,(unsigned long long)conf->anchors[RIGHT]);
+  DUMP(top,"%llu",level+2,M,(unsigned long long)conf->anchors[TOP]);
+  DUMP(bottom,"%llu",level+2,M,(unsigned long long)conf->anchors[BOTTOM]);
+
+  DUMP(w,"%u",level,M,conf->w);
+  DUMP(h,"%u",level,M,conf->h);
+  DUMP(sx,"%u",level,M,conf->sx);
+  DUMP(sy,"%u",level,M,conf->sy);
+
+  DUMP(raw,"%08b",level,M,conf->raw);
+  DUMP(fillFunction,"%d",level,M,conf->fillFunction);
+  DUMP(onEvent,"%d",level,M,conf->onEvent);
+  DUMP_STR(text,level,M,conf->text);
   return 1;
 }
+int dumpBorder(struct border_s*bord,int level){
+  if(!bord)return 0;
+  int M=15;
+#define DUMP_EDGES(name,arg)do{\
+  DUMP(name,"%s",level,M,"");\
+  level+=2;\
+  DUMP_STR(pattern,level,M,arg[EDGE_PATTERN]);\
+  DUMP_STR(middle,level,M,arg[EDGE_MIDDLE]);\
+  DUMP_STR(upper,level,M,arg[EDGE_UPPER]);\
+  DUMP_STR(lower,level,M,arg[EDGE_LOWER]);\
+  DUMP_STR(right,level,M,arg[EDGE_RIGHT]);\
+  DUMP_STR(left,level,M,arg[EDGE_LEFT]);\
+  level-=2;\
+}while(0)
+  DUMP(edges,"%s",level,M,"");
+  level+=2;
+  DUMP_EDGES(top,bord->edges[TOP]);
+  DUMP_EDGES(left,bord->edges[LEFT]);
+  DUMP_EDGES(right,bord->edges[RIGHT]);
+  DUMP_EDGES(bottom,bord->edges[BOTTOM]);
+  level-=2;
+#undef DUMP_EDGES
+  DUMP(corners,"%s",level,M,"");
+  level+=2;
+  DUMP_STR(top_left,level,M,bord->corners[TOP_LEFT]);
+  DUMP_STR(top_right,level,M,bord->corners[TOP_RIGHT]);
+  DUMP_STR(bottom_left,level,M,bord->corners[BOTTOM_LEFT]);
+  DUMP_STR(bottom_right,level,M,bord->corners[BOTTOM_RIGHT]);
+  level-=2;
+  DUMP_STR(pattern,level,M,bord->pattern);
+  return 1;
+  }
+int dumpWidget(widget_t *root,int level){
+  if(!root)return 0;
+  widget_t *cur=root;
+  struct config_s *conf=cur->config;
+  struct border_s *bord=cur->borders;
+  DUMP(widget,"%s",level,10,"");
+  level+=2;
+  if(!dumpConfig(conf,level))return 0;
+  if(!dumpBorder(bord,level))return 0;
+  return 1;
+}
+
 int initializeLua(app_state_t*app){
   lua_State*L=luaL_newstate();
   app->L=L;
@@ -412,57 +470,6 @@ int initializeLua(app_state_t*app){
     fprintf(stderr,"ERROR: unable to recognise config path\n");
     return 0;
   }
+  free(config_path);
   return 1;
 }
-
-#define DUMP(name,frm,level,max,...)do{\
-  int _len=(int)sizeof(#name)- 1;\
-  int _pad=((max)> _len)?((max)- _len): 0;\
-  fprintf(stdout,"%*s%s%*s: " frm "\n",\
-      (level),"",#name,_pad,"",__VA_ARGS__);\
-}while(0)
-
-int dumpConfig(struct config_s *conf,int level){
-  if(!conf)return 0;
-  int M=15;
-  DUMP(id,"%llu",level,M,(unsigned long long)conf->id);
-  DUMP(anchors,"%s",level,M,"");
-  DUMP(left,"%llu",level+2,M,(unsigned long long)conf->anchors[LEFT]);
-  DUMP(right,"%llu",level+2,M,(unsigned long long)conf->anchors[RIGHT]);
-  DUMP(top,"%llu",level+2,M,(unsigned long long)conf->anchors[TOP]);
-  DUMP(bottom,"%llu",level+2,M,(unsigned long long)conf->anchors[BOTTOM]);
-
-  DUMP(w,"%u",level,M,conf->w);
-  DUMP(h,"%u",level,M,conf->h);
-  DUMP(sx,"%u",level,M,conf->sx);
-  DUMP(sy,"%u",level,M,conf->sy);
-
-  DUMP(raw,"%08b",level,M,conf->raw);
-  DUMP(fillFunction,"%d",level,M,conf->fillFunction);
-  DUMP(onEvent,"%d",level,M,conf->onEvent);
-  if(conf->text && conf->text->buf){
-    DUMP(text,"%s",level,M,readStringT(conf->text));
-  }else{
-    DUMP(text,"%s",level,M,"(null)");
-  }
-  return 1;
-}
-int dumpBorder(struct border_s*bord,int level){
-  if(!bord)return 0;
-  int M=15;
-  if(bord->pattern && bord->pattern->buf)
-    DUMP(pattern,"%s",level,M,readStringT(bord->pattern));
-  else
-    DUMP(pattern,"%s",level,M,"(null)");
-  return 1;
-}
-int dumpWidget(widget_t *root,int level){
-  if(!root)return 0;
-  widget_t *cur=root;
-  struct config_s *conf=cur->config;
-  struct border_s *bord=cur->borders;
-  if(!dumpConfig(conf,level+1))return 0;
-  if(!dumpBorder(bord,level+1))return 0;
-  return 1;
-}
-

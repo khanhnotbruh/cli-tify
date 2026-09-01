@@ -1,8 +1,6 @@
 #include "config.h"
 #include "global_var.h"
-#include <luajit-2.1/lua.h>
-#include <luajit-2.1/lualib.h>
-#include <luajit-2.1/lauxlib.h>
+
 #include <stdio.h>
 #include <signal.h>
 void handle_signal(int sig) {

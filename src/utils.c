@@ -1,8 +1,6 @@
 #include "global_var.h"
 #include "helper.h"
-#include <lua.h>
-#include <ncurses.h>
-#include <stdint.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -92,8 +90,8 @@ void*createComponent(app_state_t*app,uint64_t size){
     app->mem[CURR]=mem;
   }
   void*ans=((uint8_t*)mem->buf+mem->cnt);
-  memset(ans,0,size);
   mem->cnt+=size;
+  memset(ans,0,size);
   return ans;
 }
 void*pushComponent(app_state_t*app,void*com,uint64_t size){
@@ -118,8 +116,6 @@ string_t*makeStringT(app_state_t*app,char*s,uint64_t size){
   if(!new->buf)return 0;
   new->end=new->buf+size;
   new->last=new->end;
-  *new->last='\0';
-  new->last++;
   new->len=size;
   new->next=0;
   new->type=FIXED;
@@ -225,12 +221,14 @@ void freeApp(app_state_t*app){
   freeMemory(app->mem[ROOT]);
   app->mem[ROOT]=0;
   app->mem[CURR]=0;
+  free(app->screen);
   freeLua(app->L);
   freeNcurse();
 }
 
 void freeStringT(string_t*s){
   if(!s)return;
+  if(s->type==FIXED)return;
   while(s){
     string_t*n=s->next;
     if(s->type==DYNAMIC){
@@ -261,3 +259,27 @@ uint32_t decodeUTF(char*s,uint64_t*size){
   return 0;
 }
 
+int initializeApp(app_state_t *app){
+  memory_t*mem=malloc(sizeof(memory_t));
+  if(!mem){
+    fprintf(stderr,"error failed allocating memory\n");
+    return 0;
+  }
+  mem->cnt=0;mem->size=1024;
+  mem->buf=malloc(mem->size);
+  if(!mem->buf){
+    fprintf(stderr,"error failed allocating memory\n");
+    return 0;
+  }
+  mem->next=0;
+  app->mem[ROOT]=mem;
+  app->mem[CURR]=mem;
+  widget_t*screen=malloc(sizeof(widget_t));
+  if(!screen){
+    fprintf(stderr,"error failed allocating memory\n");
+    return 0;
+  }
+  memset(screen,0,sizeof(widget_t));
+  app->screen=screen;
+  return 1;
+}

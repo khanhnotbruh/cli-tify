@@ -1,6 +1,8 @@
 #ifndef GLOBAL_H
 #define GLOBAL_H
 #include <luajit-2.1/lua.h>
+#include <luajit-2.1/lualib.h>
+#include <luajit-2.1/lauxlib.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <ncurses.h>
@@ -112,6 +114,7 @@ string_t*pushStringT(app_state_t*app,string_t*s);
 string_t*makeStringT(app_state_t*app,char*s,uint64_t size);
 struct border_s*pushBorder(app_state_t*app,struct border_s*border);
 struct config_s*pushConfig(app_state_t*app,struct config_s*config);
+int initializeApp(app_state_t*app);
 // harmless function
 void handleEvent(app_state_t*app,int event);
 void freeLua(lua_State*L);
