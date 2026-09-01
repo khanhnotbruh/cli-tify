@@ -1,0 +1,39 @@
+# structure:
+- notes: char means 1 character, but if you are using ascii char then pls enable ascii
+
+- widget:
+    - config
+        - ascii:bool        // enabling ascii char
+        - sx,sy,w,h:int     // starting properties
+        - id:string  // widget id
+        - outline:
+            - top/bottom/left/right:    // the side of the widget's outline 
+                - pattern:string        // the string repeating from right/upper to lower/right  
+                - middle:string         // the string in the middle   
+                - upper/right:string    // the string in the right/upper side of the outline  
+                - lower/left:string     // the string in the left/bottom side of the outline   
+            - corner:                              
+                - top-left:char      // the char in the top-left corner     
+                - top-right:char     // the char in the top-right corner     
+                - bottom-left:char   // the char in the bottom-left corner    
+                - bottom-right:char  // the char in the bottom-right corner    
+
+        - empty:bool                           // should this be empty (no char inside, overlapping other widget)
+            - fill:function(int x,int y)->char // how things should be filled (exclude outlines and corners)
+        - focus:bool                           // does this take keyboard
+        - mouse:bool                           // does this take mouse
+        - fallthrough:bool                     // does inputs fall through this widget?
+        - drag:bool                            // enable draging
+            - preserve_layers:bool             // preserve z of the widget
+            - anchors:
+                - left/right/top/bottom:string // stick to the id's widget's side
+    - state: 
+        - is_hovered:bool   // is mouse inside this? -layer dependent        
+        - is_empty:bool     // any widget inside this?          
+        - is_focus:bool     // is this widget eating keyboard?         
+        - is_visible:bool   // is this widget being on screen (not fully)     
+        - is_clicked:bool   // is this widget got clicked?     
+        - is_pressed:bool   // any key pressed while focusing this widget?   
+        - key_pressed:int   // what key pressed while inside this widget? (including mouse) 
+        - cx,cy:int         // where am i?
+        - onClick:function(string type) // on click-type, do st..

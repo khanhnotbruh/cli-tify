@@ -1,0 +1,1 @@
+/home/khanh/.config/musicli/config.lua
