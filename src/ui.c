@@ -14,13 +14,11 @@ int initializeUI(app_state_t app){
     fprintf(stderr,"ERROR: failed to initialize window\n");
     return 1;
   }
-  app.scr=stdscr;
   return 0;
 }
 
 // Basically, app is keeping a root widget,
 // we have to loop through all of them to draw the whole thing..
-// well i will have to do the widget creation part
 
 static int updateWidget(widget_t*widget,int event){
   if(!widget||!widget->state) return 1;
@@ -31,6 +29,26 @@ static int updateWidget(widget_t*widget,int event){
   widget->state->is_pressed=1;
   return 1;
 }
+int drawWidget(widget_t*widget){
+  struct config_s *conf=widget->config;
+  struct border_s *bord=widget->borders;
+
+}
+static void traverseTree(widget_t*node){
+  while(node){
+    traverseTree(node->child);
+    node=node->sibling;
+  }
+}
+int createZtable(app_state_t*app,widget_t*zt){
+  if(!zt)zt=createComponent(app, app->wid_cnt*sizeof(widget_t*));
+  if(!zt){
+    fprintf(stderr,"ERROR: failed to allocate memory\n");
+    return 0;
+  }
+  
+}
+
 
 
 

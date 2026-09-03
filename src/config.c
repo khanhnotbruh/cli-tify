@@ -45,7 +45,7 @@ static int getRegVal(lua_State*L,int ref,const char*inp[],uint64_t size,int*out)
         goto next_cycle;
       }
     }
-    logError(L,"unexpected key in config table (a value set twice or unknow key)");
+    logError(L,"unexpected key in config table(a value set twice or unknow key)");
     lua_settop(L,idx-1);
     return 0;
 next_cycle:
@@ -61,7 +61,7 @@ static int l_hello(lua_State*L){
   return 1;
 }
 // &L
-#define GET_RAWI(id,ref,ltype,cleanup,error) do{\
+#define GET_RAWI(id,ref,ltype,cleanup,error)do{\
   lua_rawgeti(L,LUA_REGISTRYINDEX,ref[id]);\
   if(!lua_is##ltype(L,-1)){\
     fprintf(stderr,"ERROR: unable to recognise "#id"'s type\n");\
@@ -71,14 +71,14 @@ static int l_hello(lua_State*L){
   }\
 }while(0)
 #define CLAMP_NEGATIVE(val)_Generic((val),\
-  int:((val)<0?0:(val)),\
-  long:((val)<0?0:(val)),\
-  long long:((val)<0?0:(val)),\
-  double:((val)< 0?0:(val)),\
-  default:(val)\
+int:((val)<0?0:(val)),\
+long:((val)<0?0:(val)),\
+long long:((val)<0?0:(val)),\
+double:((val)< 0?0:(val)),\
+default:(val)\
 )
 // &L
-#define ASSIGN_FIELD(id,ref,des,ltype,ctype,cleanup,error) do{\
+#define ASSIGN_FIELD(id,ref,des,ltype,ctype,cleanup,error)do{\
   if(ref[id]!=LUA_NOREF){\
     GET_RAWI(id,ref,ltype,cleanup,error);\
     des=(ctype)CLAMP_NEGATIVE(lua_to##ltype(L,-1));\
@@ -86,13 +86,13 @@ static int l_hello(lua_State*L){
   }\
 }while(0)
 // &L,&app
-#define ASSIGN_STRINGT(id,ref,des,cleanup,error) do{\
+#define ASSIGN_STRINGT(id,ref,des,cleanup,error)do{\
   if(ref[id]!=LUA_NOREF){\
     GET_RAWI(id,ref,string,cleanup,error);\
     string_t tmp={\
-       .type=DYNAMIC,\
-       .buf=(char*)lua_tolstring(L,-1,&tmp.len),\
-       .end=tmp.buf+tmp.len,\
+      .type=DYNAMIC,\
+      .buf=(char*)lua_tolstring(L,-1,&tmp.len),\
+      .end=tmp.buf+tmp.len,\
     };\
     tmp.last=tmp.end;\
     des=pushStringT(app,&tmp);\
@@ -105,7 +105,7 @@ static int l_hello(lua_State*L){
   }\
 }while(0)
 // &L
-#define ASSIGN_HASH(id,ref,des,cleanup,error) do{\
+#define ASSIGN_HASH(id,ref,des,cleanup,error)do{\
   if(ref[id]!=LUA_NOREF){\
     GET_RAWI(id,ref,string,cleanup,error);\
     des=hash_id64(lua_tostring(L,-1));\
@@ -116,9 +116,9 @@ static int l_hello(lua_State*L){
 int assignConfig(app_state_t*app,widget_t*widget,int ref_idx){
   lua_State*L=app->L;
   bool error=1;
-  if(!widget->config)widget->config=createComponent(app, sizeof(struct config_s));
+  if(!widget->config)widget->config=createComponent(app,sizeof(struct config_s));
   if(!widget->config){
-    fprintf(stderr, "ERROR: failed allocating space for widget's config\n");
+    fprintf(stderr,"ERROR: failed allocating space for widget's config\n");
     return 0;
   }
   struct config_s*cfg=widget->config;
@@ -146,21 +146,21 @@ int assignConfig(app_state_t*app,widget_t*widget,int ref_idx){
   ASSIGN_FIELD(DRAG,ref,cfg->drag,boolean,bool,cleanup,error);       
   ASSIGN_FIELD(PRESERVE_LAYERS,ref,cfg->preserve_layers,boolean,bool,cleanup,error);
   ASSIGN_STRINGT(TEXT,ref,cfg->text,cleanup,error);
-  ASSIGN_HASH(ID,ref,cfg->id,cleanup,error);
   if(ref[ANCHORS]!=LUA_NOREF){
     const char*anchor_key[SIDE_COUNT]={
       [TOP]="top",[BOTTOM]="bottom",
       [LEFT]="left",[RIGHT]="right"
     };
     int anchor_ref[SIDE_COUNT]={0};
-    uint64_t*anchors=cfg->anchors;
     if(!getRegVal(L,ref[ANCHORS],anchor_key,SIDE_COUNT,anchor_ref)){
       fprintf(stderr,"ERROR: failed to get values from lua's register\n");
       error=0;
       goto anchor_cleanup;
     }
-    for(int i=0;i<SIDE_COUNT;i++)
-      ASSIGN_HASH(i,anchor_ref,anchors[i],anchor_cleanup,error);
+    ASSIGN_FIELD(TOP,ref,cfg->anchors.top,boolean,bool,anchor_cleanup,error);     
+    ASSIGN_FIELD(BOTTOM,ref,cfg->anchors.bottom,boolean,bool,anchor_cleanup,error);     
+    ASSIGN_FIELD(LEFT,ref,cfg->anchors.left,boolean,bool,anchor_cleanup,error);     
+    ASSIGN_FIELD(RIGHT,ref,cfg->anchors.right,boolean,bool,anchor_cleanup,error);     
 anchor_cleanup:
     for(int i=0;i<SIDE_COUNT;i++){
       if(anchor_ref[i]!=LUA_NOREF){
@@ -168,8 +168,6 @@ anchor_cleanup:
         anchor_ref[i]=LUA_NOREF;
       }
     }
-    luaL_unref(L,LUA_REGISTRYINDEX,ref[ANCHORS]);
-    ref[ANCHORS]=LUA_NOREF;
     if(!error)goto cleanup;
   }
 cleanup:
@@ -183,7 +181,7 @@ cleanup:
 }
 int assignBorder(app_state_t*app,widget_t*widget,int ref_idx){
   lua_State*L=app->L;bool error=1;
-  if(!widget->borders)widget->borders=createComponent(app, sizeof(struct border_s));
+  if(!widget->borders)widget->borders=createComponent(app,sizeof(struct border_s));
   if(!widget->borders){
     fprintf(stderr,"ERROR: failed allocating space for widget's borders");
     return 0;
@@ -316,25 +314,26 @@ int assignWidget(app_state_t*app,widget_t*parent,int idx){
           return 0;
         }
       }else{
-        logError(L, "unknown property table '%s'",key);
+        logError(L,"unknown property table '%s'",key);
         luaL_unref(L,LUA_REGISTRYINDEX,conf_ref);
         lua_settop(L,idx);
         return 0;
       }
       luaL_unref(L,LUA_REGISTRYINDEX,conf_ref);
     }else{
-      logError(L, "expected table for property '%s',got %s",key,lua_typename(L,-1));
+      logError(L,"expected table for property '%s',got %s",key,lua_typename(L,-1));
       lua_settop(L,idx);
       return 0;
     }
     lua_pop(L,1);
   }
   lua_pushlightuserdata(L,parent);
+  app->wid_cnt++;
   return 1;
 }
 static int l_widget(lua_State*L){
   if(!lua_istable(L,1)){
-    return luaL_error(L,"expected table for 'Widget', got %s",luaL_typename(L,1));
+    return luaL_error(L,"expected table for 'Widget',got %s",luaL_typename(L,1));
   }
   lua_pushstring(L,"app_state");
   lua_gettable(L,LUA_REGISTRYINDEX);
@@ -365,7 +364,7 @@ static int l_widget(lua_State*L){
   if(!app->screen->child)app->screen->child=parent;
   else if(app->screen->child==parent->child)app->screen->child=parent;
   int argc=assignWidget(app,parent,1);
-  if(!argc) fprintf(stderr, "ERROR: unable to apply config to widget\n");
+  if(!argc)fprintf(stderr,"ERROR: unable to apply config to widget\n");
   return argc;
 }
 
@@ -375,7 +374,7 @@ static int l_widget(lua_State*L){
   fprintf(stdout,"%*s%s%*s: " frm "\n",\
       (level),"",#name,_pad,"",__VA_ARGS__);\
 }while(0)
-#define DUMP_STR(name,level,max,arg) do{\
+#define DUMP_STR(name,level,max,arg)do{\
   char*_tmp=readStringT(arg);\
   DUMP(name,"%s",level,max,_tmp?_tmp:"(null)");\
   free(_tmp);\
@@ -384,12 +383,11 @@ static int l_widget(lua_State*L){
 int dumpConfig(struct config_s *conf,int level){
   if(!conf)return 0;
   int M=15;
-  DUMP(id,"%llu",level,M,(unsigned long long)conf->id);
   DUMP(anchors,"%s",level,M,"");
-  DUMP(left,"%llu",level+2,M,(unsigned long long)conf->anchors[LEFT]);
-  DUMP(right,"%llu",level+2,M,(unsigned long long)conf->anchors[RIGHT]);
-  DUMP(top,"%llu",level+2,M,(unsigned long long)conf->anchors[TOP]);
-  DUMP(bottom,"%llu",level+2,M,(unsigned long long)conf->anchors[BOTTOM]);
+  DUMP(left,"%b",level+2,M,conf->anchors.top);
+  DUMP(right,"%b",level+2,M,conf->anchors.bottom);
+  DUMP(top,"%b",level+2,M,conf->anchors.left);
+  DUMP(bottom,"%b",level+2,M,conf->anchors.right);
 
   DUMP(w,"%u",level,M,conf->w);
   DUMP(h,"%u",level,M,conf->h);
@@ -461,9 +459,9 @@ int initializeLua(app_state_t*app){
   lua_settable(L,LUA_REGISTRYINDEX);
   //throw functions
   lua_pushcfunction(L,l_hello);
-  lua_setfield(L, -2, "hello");
+  lua_setfield(L,-2,"hello");
   lua_pushcfunction(L,l_widget);
-  lua_setfield(L, -2, "widget");
+  lua_setfield(L,-2,"widget");
   lua_setglobal(L,"musicli");
   char*config_path=readStringT(app->config_path);
   if(!config_path){

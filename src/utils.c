@@ -260,6 +260,12 @@ uint32_t decodeUTF(char*s,uint64_t*size){
 }
 
 int initializeApp(app_state_t *app){
+  if(!app)app=malloc(sizeof(app_state_t));
+  if(!app){
+    fprintf(stderr,"error failed allocating memory\n");
+    return 0;
+  }
+  memset(app,0,sizeof(app_state_t));
   memory_t*mem=malloc(sizeof(memory_t));
   if(!mem){
     fprintf(stderr,"error failed allocating memory\n");

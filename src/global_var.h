@@ -30,7 +30,7 @@ typedef struct string_t{
 //------------------- WIDGET -------------------//
 struct border_s{
   string_t*edges[4][6];
-  string_t*corners[4];
+  string_t*corners[4];//string since utf8 exist
   string_t*pattern;
 };
 struct state_s{
@@ -50,26 +50,29 @@ struct state_s{
   };
 }; 
 struct config_s{
-  uint64_t id; //encoded from string to idx
-  uint64_t anchors[4];//id of parent
   uint32_t w,h,sx,sy;
   union{
-    uint8_t raw;
+    uint16_t raw;
     struct{
-      uint8_t ascii       : 1;
-      uint8_t empty       : 1;
-      uint8_t focus       : 1;
-      uint8_t mouse       : 1;
-      uint8_t fallthrough : 1;
-      uint8_t drag        : 1;
-      uint8_t preserve_layers : 1;
-      uint8_t _:1;
+      uint16_t ascii         : 1;
+      uint16_t empty         : 1;
+      uint16_t focus         : 1;
+      uint16_t mouse         : 1;
+      uint16_t fallthrough   : 1;
+      uint16_t drag          : 1;
+      uint16_t preserve_layers : 1;
+      uint16_t abs_location  : 1;
+      struct{
+        uint16_t top    : 1;
+        uint16_t bottom : 1;
+        uint16_t left   : 1;
+        uint16_t right  : 1;
+      }anchors;
     };
   };
-  //char (*fillFunction)(int x,int y);
   int fillFunction;
   int onEvent;
-  string_t*text;
+  string_t *text;
 };
 typedef struct widget_t{
   struct config_s*config;
@@ -90,7 +93,6 @@ typedef struct memory_t{
 }memory_t;
 //------------------- APP -------------------//
 typedef struct{
-  WINDOW*scr;
   lua_State*L;
   memory_t*mem[2];
   string_t*config_path;
