@@ -1,3 +1,5 @@
+#include <lauxlib.h>
+#include <lua.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,7 +34,7 @@ static int getRegVal(lua_State*L,int ref,const char*inp[],uint64_t size,int*out)
   lua_pushnil(L);
   while(lua_next(L,idx)!=0){
     if(lua_type(L,-2)!=LUA_TSTRING){
-      logError(L,"unknown key type in config table(expected string)");
+      logError(L,"unknown key type in config table(expected string, got %s)",lua_type(L,-2));
       lua_settop(L,idx-1);
       return 0;
     }
@@ -64,7 +66,7 @@ static int l_hello(lua_State*L){
 #define GET_RAWI(id,ref,ltype,cleanup,error)do{\
   lua_rawgeti(L,LUA_REGISTRYINDEX,ref[id]);\
   if(!lua_is##ltype(L,-1)){\
-    fprintf(stderr,"ERROR: unable to recognise "#id"'s type\n");\
+    logError(L,"field '%s' expected type %s, got %s",key[id],#ltype,lua_type(L,-1));\
     lua_pop(L,1);\
     error=0;\
     goto cleanup;\
@@ -89,13 +91,13 @@ default:(val)\
 #define ASSIGN_STRINGT(id,ref,des,cleanup,error)do{\
   if(ref[id]!=LUA_NOREF){\
     GET_RAWI(id,ref,string,cleanup,error);\
-    string_t tmp={\
+    string_t _tmp={\
       .type=DYNAMIC,\
-      .buf=(char*)lua_tolstring(L,-1,&tmp.len),\
-      .end=tmp.buf+tmp.len,\
+      .buf=(char*)lua_tolstring(L,-1,&_tmp.len),\
+      .end=_tmp.buf+_tmp.len,\
     };\
-    tmp.last=tmp.end;\
-    des=pushStringT(app,&tmp);\
+    _tmp.last=_tmp.end;\
+    des=pushStringT(app,&_tmp);\
     lua_pop(L,1);\
     if(!des){\
       fprintf(stderr,"ERROR: failed pushing string into memory\n");\
@@ -112,7 +114,10 @@ default:(val)\
     lua_pop(L,1);\
   }\
 }while(0)
-
+#define ASSIGN_FUNCTION(id,ref,des)do{\
+  if((ref)[id]!=LUA_NOREF)\
+    (des)=(int32_t)(ref)[id];\
+}while(0)
 int assignConfig(app_state_t*app,widget_t*widget,int ref_idx){
   lua_State*L=app->L;
   bool error=1;
@@ -123,10 +128,10 @@ int assignConfig(app_state_t*app,widget_t*widget,int ref_idx){
   }
   struct config_s*cfg=widget->config;
   const char* key[CONFIG_COUNT]={
-    [ID]="id",[W]="w",[H]="h",[SX]="sx",[SY]="sy",[ASCII]="ascii",
+    [ID]="id",[W]="w",[H]="h",[SX]="sx",[SY]="sy",
     [EMPTY]="empty",[FOCUS]="focus",[MOUSE]="mouse",[FALLTHROUGH]="fallthrough",
-    [DRAG]="drag",[PRESERVE_LAYERS]="preserve_layers",[FILL]="fillFunction",
-    [TEXT]="text",[ANCHORS]="anchors",[ON_EVENT]="onEvent"
+    [DRAG]="drag",[PRESERVE_LAYERS]="preserve_layers",//[FILL]="fillFunction",
+    [ANCHORS]="anchors",[Z]="z",[ON_EVENT]="onEvent"//[TEXT]="text"
   };
   int ref[CONFIG_COUNT];
   if(!getRegVal(L,ref_idx,key,CONFIG_COUNT,ref)){
@@ -138,14 +143,14 @@ int assignConfig(app_state_t*app,widget_t*widget,int ref_idx){
   ASSIGN_FIELD(H,ref,cfg->h,number,uint32_t,cleanup,error);
   ASSIGN_FIELD(SX,ref,cfg->sx,number,uint32_t,cleanup,error);
   ASSIGN_FIELD(SY,ref,cfg->sy,number,uint32_t,cleanup,error);
-  ASSIGN_FIELD(ASCII,ref,cfg->ascii,boolean,bool,cleanup,error);     
+  ASSIGN_FIELD(Z,ref,cfg->z,number,uint32_t,cleanup,error);
   ASSIGN_FIELD(EMPTY,ref,cfg->empty,boolean,bool,cleanup,error);   
   ASSIGN_FIELD(FOCUS,ref,cfg->focus,boolean,bool,cleanup,error);      
   ASSIGN_FIELD(MOUSE,ref,cfg->mouse,boolean,bool,cleanup,error);      
   ASSIGN_FIELD(FALLTHROUGH,ref,cfg->fallthrough,boolean,bool,cleanup,error);
   ASSIGN_FIELD(DRAG,ref,cfg->drag,boolean,bool,cleanup,error);       
   ASSIGN_FIELD(PRESERVE_LAYERS,ref,cfg->preserve_layers,boolean,bool,cleanup,error);
-  ASSIGN_STRINGT(TEXT,ref,cfg->text,cleanup,error);
+  ASSIGN_FUNCTION(ON_EVENT,ref,cfg->onEvent);
   if(ref[ANCHORS]!=LUA_NOREF){
     const char*anchor_key[SIDE_COUNT]={
       [TOP]="top",[BOTTOM]="bottom",
@@ -180,12 +185,12 @@ cleanup:
   return error;
 }
 int assignBorder(app_state_t*app,widget_t*widget,int ref_idx){
-  lua_State*L=app->L;bool error=1;
   if(!widget->borders)widget->borders=createComponent(app,sizeof(struct border_s));
   if(!widget->borders){
     fprintf(stderr,"ERROR: failed allocating space for widget's borders");
     return 0;
   }
+  lua_State*L=app->L;bool error=1;
   struct border_s*bd=widget->borders;
   const char*key[BORDER_COUNT]={
     [EDGES]="edges",[CORNERS]="corners",
@@ -253,9 +258,9 @@ corner_cleanup:
       for(int j=0;j<EDGE_COUNT;j++)
         ASSIGN_STRINGT(j,edge_ref,edge[i][j],edge_cleanup,error);
 edge_cleanup:
-      for(int i=0;i<EDGE_COUNT;i++){
-        if(edge_ref[i]!=LUA_NOREF){
-          luaL_unref(L,LUA_REGISTRYINDEX,edge_ref[i]);
+      for(int j=0;j<EDGE_COUNT;j++){
+        if(edge_ref[j]!=LUA_NOREF){
+          luaL_unref(L,LUA_REGISTRYINDEX,edge_ref[j]);
         }
       }
       if(!error)goto side_cleanup;
@@ -267,18 +272,46 @@ side_cleanup:
       }
     }
     luaL_unref(L,LUA_REGISTRYINDEX,ref[EDGES]);
-    ref[EDGES]=LUA_NOREF;
     if(!error)goto cleanup;
   }
 cleanup:
   for(int i=0;i<BORDER_COUNT;i++){
     if(ref[i]!=LUA_NOREF){
       luaL_unref(L,LUA_REGISTRYINDEX,ref[i]);
-      ref[i]=LUA_NOREF;
     }
   }
   return error;
 }
+int assignContent(app_state_t*app,widget_t*widget,int ref_idx){
+  if(!widget->content)widget->content=createComponent(app, sizeof(struct content_s));
+  if(!widget->content){
+    fprintf(stderr,"ERROR: failed allocating content for widget\n");
+    return 0;
+  }
+  struct content_s*cont=widget->content;
+  lua_State*L=app->L;bool error=1;
+  int ref[CONTENT_COUNT]={0};char*key[CONTENT_COUNT]={
+    [TEXT]="text", [IMG_PATH]="image_path"
+  };
+  bool occupied=0;
+  for(int i=0;i<CONTENT_COUNT;i++){
+    bool c=ref[i]!=LUA_NOREF;
+    if(occupied&&c){
+      logError(L, "content table expected only 1 feild selected, found 2");
+      error=1;      
+      goto cleanup;
+    }
+  }
+  ASSIGN_STRINGT(TEXT,ref,cont->text,cleanup,error);
+  ASSIGN_STRINGT(IMG_PATH,ref,cont->img_path,cleanup,error);
+cleanup:
+  for(int i=0;i<CONTENT_COUNT;i++)
+    if(ref[i]!=LUA_NOREF)
+      luaL_unref(L,LUA_REGISTRYINDEX,ref[i]);
+  return error;
+}
+
+
 // idx is the table idx
 int assignWidget(app_state_t*app,widget_t*parent,int idx){
   lua_State*L=app->L;
@@ -328,9 +361,9 @@ int assignWidget(app_state_t*app,widget_t*parent,int idx){
     lua_pop(L,1);
   }
   lua_pushlightuserdata(L,parent);
-  app->wid_cnt++;
   return 1;
 }
+static uint64_t G_creation_time=1;
 static int l_widget(lua_State*L){
   if(!lua_istable(L,1)){
     return luaL_error(L,"expected table for 'Widget',got %s",luaL_typename(L,1));
@@ -341,9 +374,13 @@ static int l_widget(lua_State*L){
   lua_pop(L,1);
   widget_t*parent=createComponent(app,sizeof(widget_t));
   if(!parent){
-    fprintf(stderr,"ERROR: failed creating widget\n");
+    fprintf(stderr,"ERROR: failed allocating memory for widget\n");
     return 0;
   }
+
+  parent->creation_idx=G_creation_time++;
+  app->wid_cnt++;
+
   uint64_t child_cnt=lua_rawlen(L,1);
   widget_t*prev=0;
   for(uint64_t i=1;i<=child_cnt;i++){
@@ -395,9 +432,7 @@ int dumpConfig(struct config_s *conf,int level){
   DUMP(sy,"%u",level,M,conf->sy);
 
   DUMP(raw,"%08b",level,M,conf->raw);
-  DUMP(fillFunction,"%d",level,M,conf->fillFunction);
   DUMP(onEvent,"%d",level,M,conf->onEvent);
-  DUMP_STR(text,level,M,conf->text);
   return 1;
 }
 int dumpBorder(struct border_s*bord,int level){
@@ -430,17 +465,18 @@ int dumpBorder(struct border_s*bord,int level){
   DUMP_STR(bottom_right,level,M,bord->corners[BOTTOM_RIGHT]);
   level-=2;
   DUMP_STR(pattern,level,M,bord->pattern);
+  DUMP(fillFunction,"%d",level,M,bord->fillFunction);
   return 1;
-  }
+}
 int dumpWidget(widget_t *root,int level){
   if(!root)return 0;
-  widget_t *cur=root;
-  struct config_s *conf=cur->config;
-  struct border_s *bord=cur->borders;
+  struct config_s *conf=root->config;
+  struct border_s *bord=root->borders;
   DUMP(widget,"%s",level,10,"");
   level+=2;
   if(!dumpConfig(conf,level))return 0;
   if(!dumpBorder(bord,level))return 0;
+  DUMP(creation_idx,"%llu",level,10,1LL*root->creation_idx);
   return 1;
 }
 

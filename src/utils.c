@@ -1,21 +1,11 @@
 #include "global_var.h"
 #include "helper.h"
+#include "ui.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-// i dont freaking know anything abt hashing, and this code is llm-generated
-uint64_t hash_id64(const char *str){
-  if(!str)return 0;
-  uint64_t hash=14695981039346656037ULL; // Offset basis
-  uint64_t fnv_prime=1099511628211ULL;   // FNV prime
-  while(*str){
-    hash ^=(uint8_t)(*str); // XOR the bottom byte with current char
-    hash *=fnv_prime;       // Multiply to scramble bits across 64-bits
-    str++;
-  }
-  return hash;
-}
 
 //remember to free memory
 char*readStringT(string_t*s){
@@ -28,7 +18,7 @@ char*readStringT(string_t*s){
   }
   char*c=new;
   while(s&&len){
-    uint64_t size=s->last-s->buf;
+    uint64_t size=s->len;
     if(size>len)size=len;
     memcpy(c,s->buf,size);
     c+=size;
@@ -39,7 +29,7 @@ char*readStringT(string_t*s){
   *c='\0';
   return new;
 }
-// does copy text buffer, locating after string_t struct
+// does copy text buffer,locating after string_t struct
 int stringTCpy(string_t*destination,string_t*source,uint64_t size){
   uint64_t len=source->len;
   string_t*s=source;
@@ -85,8 +75,8 @@ void*createComponent(app_state_t*app,uint64_t size){
   if(!app)return 0;
   memory_t*mem=app->mem[CURR];
   if(mem->cnt+size>mem->size){
-    mem=allocateMore(mem, size);
-    if(!mem) return 0;
+    mem=allocateMore(mem,size);
+    if(!mem)return 0;
     app->mem[CURR]=mem;
   }
   void*ans=((uint8_t*)mem->buf+mem->cnt);
@@ -99,11 +89,11 @@ void*pushComponent(app_state_t*app,void*com,uint64_t size){
   memory_t*mem=app->mem[CURR];
   if(!mem||!com)return 0;
   if(mem->cnt+size>mem->size){
-    mem=allocateMore(mem, size);
-    if(!mem) return 0;
+    mem=allocateMore(mem,size);
+    if(!mem)return 0;
   }
   void*des=(uint8_t*)mem->buf+mem->cnt;
-  memcpy(des, com, size);
+  memcpy(des,com,size);
   mem->cnt+=size;
   app->mem[CURR]=mem;
   return des;
@@ -127,11 +117,11 @@ string_t*pushStringT(app_state_t*app,string_t*s){
   if(!mem||!s)return 0;
   if(s->type==FIXED)return s;
   uint64_t size=s->len;
-  string_t*new=createComponent(app, size+sizeof(string_t));
+  string_t*new=createComponent(app,size+sizeof(string_t));
   if(!new)return 0;
   new->buf=(char*)new+sizeof(string_t);
   if(!stringTCpy(new,s,size)){
-    fprintf(stderr, "ERROR: failed to copy string\n");
+    fprintf(stderr,"ERROR: failed to copy string\n");
     return 0;
   }
   new->type=FIXED;
@@ -145,11 +135,11 @@ struct border_s*pushBorder(app_state_t*app,struct border_s*border){
   for(int i=0;i<4;i++){
     for(int j=0;j<6;j++){
       if(border->edges[i][j]){
-        if(!pushStringT(app, border->edges[i][j]))return 0;
+        if(!pushStringT(app,border->edges[i][j]))return 0;
       }
     }
     if(border->corners[i]){
-        if(!pushStringT(app, border->corners[i]))return 0;
+      if(!pushStringT(app,border->corners[i]))return 0;
     }
   }
   return new;
@@ -159,9 +149,6 @@ struct config_s*pushConfig(app_state_t*app,struct config_s*config){
   uint64_t size=sizeof(struct config_s);
   struct config_s*new=pushComponent(app,config,size);
   if(!new)return 0;
-  if(config->text){
-    if(!pushStringT(app,config->text))return 0;
-  }
   return new;
 }
 widget_t*pushWidget(app_state_t*app,widget_t*widget){
@@ -202,12 +189,7 @@ widget_t*pushWidget(app_state_t*app,widget_t*widget){
 void freeLua(lua_State*L){
   if(L)lua_close(L);
 }
-void freeNcurse(){
-  curs_set(1);
-  clear();
-  refresh();
-  endwin();
-}
+
 void freeMemory(memory_t*mem){
   memory_t*c=mem;
   while(c){
@@ -223,7 +205,7 @@ void freeApp(app_state_t*app){
   app->mem[CURR]=0;
   free(app->screen);
   freeLua(app->L);
-  freeNcurse();
+  freeUI();
 }
 
 void freeStringT(string_t*s){
@@ -288,4 +270,41 @@ int initializeApp(app_state_t *app){
   memset(screen,0,sizeof(widget_t));
   app->screen=screen;
   return 1;
+}
+
+uint8_t*charBase64(char*path){
+  if(!path)return 0;
+  FILE*inp=fopen(path,"rb");
+  if(!inp)return 0;
+  fseek(inp,0,SEEK_END);
+  uint64_t len=ftell(inp);
+  fseek(inp,0,SEEK_SET);
+  uint8_t*new=malloc((len/3+1)*4);
+  if(!new){
+    fprintf(stderr,"ERROR: failed to allocate memory while converting string_t to base64\n");
+    return 0;
+  }
+  uint8_t buf[1<<12]={0};
+  uint8_t*wrt=new,bit=0;
+  uint32_t tmp=0,read=0;
+  while((read=fread(buf,1,1<<12,inp))>0){
+    for(int j=0;j<read;j++){
+      uint8_t c=buf[j];
+      if(c>='A'&&c<='Z')c-='A';
+      else if(c>='0'&&c<='9')c=c-'0'+52;
+      else if(c>='a'&&c<='z')c=c-'a'+26;
+      else if(c=='+')c=62;
+      else if(c=='/')c=63;
+      else continue;
+      tmp=(tmp<<6)|c;
+      bit+=6;
+      if(bit>=8){
+        bit-=8;
+        *(wrt++)=(tmp>>bit)&0xFF;
+      }
+    }
+  }
+  *wrt='\0';
+  fclose(inp);
+  return new;
 }

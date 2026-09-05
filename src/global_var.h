@@ -5,7 +5,6 @@
 #include <luajit-2.1/lauxlib.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <ncurses.h>
 
 #if LUA_VERSION_NUM < 502
 #define lua_rawlen(L, i) lua_objlen(L, (i))
@@ -26,9 +25,11 @@ typedef struct string_t{
   uint64_t len;//does count '\0'
   char*buf,*last,*end;
   // last point to the next available slot
+  // end point next to the last usable slot
 }string_t;
 //------------------- WIDGET -------------------//
 struct border_s{
+  int  fillFunction;
   string_t*edges[4][6];
   string_t*corners[4];//string since utf8 exist
   string_t*pattern;
@@ -50,7 +51,8 @@ struct state_s{
   };
 }; 
 struct config_s{
-  uint32_t w,h,sx,sy;
+  uint32_t w,h,sx,sy,z;
+  int  onEvent;
   union{
     uint16_t raw;
     struct{
@@ -61,7 +63,6 @@ struct config_s{
       uint16_t fallthrough   : 1;
       uint16_t drag          : 1;
       uint16_t preserve_layers : 1;
-      uint16_t abs_location  : 1;
       struct{
         uint16_t top    : 1;
         uint16_t bottom : 1;
@@ -70,15 +71,19 @@ struct config_s{
       }anchors;
     };
   };
-  int fillFunction;
-  int onEvent;
-  string_t *text;
+};
+struct content_s{
+  union{
+    string_t*text;
+    string_t*img_path;
+  };
 };
 typedef struct widget_t{
-  struct config_s*config;
-  struct border_s*borders;
-  struct state_s *state;
-
+  struct config_s* config;
+  struct border_s* borders;
+  struct state_s * state;
+  struct content_s*content;
+  uint64_t creation_idx;
   struct widget_t*parent;
   struct widget_t*child;
   struct widget_t*sibling;
@@ -100,7 +105,7 @@ typedef struct{
   widget_t*screen;
   widget_t*focusing;
   uint32_t wid_cnt;
-  uint32_t key_event;
+  struct notcurses*nc;
 }app_state_t;
 //------------------- FUNCTIONS -------------------//
 uint64_t hash_id64(const char*str);
@@ -120,11 +125,12 @@ int initializeApp(app_state_t*app);
 // harmless function
 void handleEvent(app_state_t*app,int event);
 void freeLua(lua_State*L);
-void freeNcurse();
 void freeApp(app_state_t*app);
 void freeStringT(string_t*s);
 int dumpConfig(struct config_s *conf,int level);
 int dumpWidget(widget_t *root,int level);
 
 uint32_t decodeUTF(char*s,uint64_t*size);
+uint8_t*charBase64(char*path);
+int putImage(char*path);
 #endif

@@ -1,1 +1,2 @@
-luajit ncurses gcc
+luajit gcc
+

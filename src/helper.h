@@ -25,6 +25,7 @@ enum edge_idx_e{
 };
 enum border_idx_e{
   EDGES=0,
+  FILL_FUNC,
   CORNERS,
   PATTERN,
   BORDER_COUNT,
@@ -48,6 +49,7 @@ enum config_idx_e{
   H,
   SX,
   SY,
+  Z,
   ASCII,     
   EMPTY,   
   FOCUS,      
@@ -55,10 +57,13 @@ enum config_idx_e{
   FALLTHROUGH,
   DRAG,       
   PRESERVE_LAYERS,
-  FILL,
   ON_EVENT,
-  TEXT,
   CONFIG_COUNT,
+};
+enum content_idx_e{
+  TEXT=0,
+  IMG_PATH,
+  CONTENT_COUNT,
 };
 enum memory_component_type_e{
   WIDGET=0,
