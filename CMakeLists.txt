@@ -9,7 +9,6 @@ set(CMAKE_C_FLAGS_DEBUG
 )
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LUAJIT REQUIRED IMPORTED_TARGET luajit)
-pkg_check_modules(NOTCURSES REQUIRED IMPORTED_TARGET notcurses)
 add_executable(musicli
   src/config.c
   src/config.h
@@ -22,5 +21,4 @@ add_executable(musicli
 target_include_directories(musicli PRIVATE include)
 target_link_libraries(musicli PRIVATE
   PkgConfig::LUAJIT
-  PkgConfig::NOTCURSES
 )

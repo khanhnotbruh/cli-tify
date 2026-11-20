@@ -63,7 +63,7 @@ static int l_hello(lua_State*L){
   return 1;
 }
 // &L
-#define GET_RAWI(id,ref,ltype,cleanup,error)do{\
+#define GET_RAWI(id,ref,key,ltype,cleanup,error)do{\
   lua_rawgeti(L,LUA_REGISTRYINDEX,ref[id]);\
   if(!lua_is##ltype(L,-1)){\
     logError(L,"field '%s' expected type %s, got %s",key[id],#ltype,lua_type(L,-1));\
@@ -80,17 +80,17 @@ double:((val)< 0?0:(val)),\
 default:(val)\
 )
 // &L
-#define ASSIGN_FIELD(id,ref,des,ltype,ctype,cleanup,error)do{\
+#define ASSIGN_FIELD(id,ref,key,des,ltype,ctype,cleanup,error)do{\
   if(ref[id]!=LUA_NOREF){\
-    GET_RAWI(id,ref,ltype,cleanup,error);\
+    GET_RAWI(id,ref,key,ltype,cleanup,error);\
     des=(ctype)CLAMP_NEGATIVE(lua_to##ltype(L,-1));\
     lua_pop(L,1);\
   }\
 }while(0)
 // &L,&app
-#define ASSIGN_STRINGT(id,ref,des,cleanup,error)do{\
+#define ASSIGN_STRINGT(id,ref,key,des,cleanup,error)do{\
   if(ref[id]!=LUA_NOREF){\
-    GET_RAWI(id,ref,string,cleanup,error);\
+    GET_RAWI(id,ref,key,string,cleanup,error);\
     string_t _tmp={\
       .type=DYNAMIC,\
       .buf=(char*)lua_tolstring(L,-1,&_tmp.len),\
@@ -107,12 +107,21 @@ default:(val)\
   }\
 }while(0)
 // &L
-#define ASSIGN_HASH(id,ref,des,cleanup,error)do{\
+#define ASSIGN_HASH(id,ref,key,des,cleanup,error)do{\
   if(ref[id]!=LUA_NOREF){\
-    GET_RAWI(id,ref,string,cleanup,error);\
+    GET_RAWI(id,ref,key,string,cleanup,error);\
     des=hash_id64(lua_tostring(L,-1));\
     lua_pop(L,1);\
   }\
+}while(0)
+//&L
+#define ASSIGN_WRAPPER(ref,key_arr,ref_arr,count,error,cleanup,assignment) do{\
+  if(!getRegVal(L,ref,key_arr,count,ref_arr)){\
+    fprintf(stderr,"ERROR: failed to get values from lua's register\n");\
+    error=1;\
+    goto cleanup;\
+  }\
+  assignment;\
 }while(0)
 #define ASSIGN_FUNCTION(id,ref,des)do{\
   if((ref)[id]!=LUA_NOREF)\
@@ -127,45 +136,42 @@ int assignConfig(app_state_t*app,widget_t*widget,int ref_idx){
     return 0;
   }
   struct config_s*cfg=widget->config;
-  const char* key[CONFIG_COUNT]={
+  const char* cfg_key[CONFIG_COUNT]={
     [ID]="id",[W]="w",[H]="h",[SX]="sx",[SY]="sy",
     [EMPTY]="empty",[FOCUS]="focus",[MOUSE]="mouse",[FALLTHROUGH]="fallthrough",
     [DRAG]="drag",[PRESERVE_LAYERS]="preserve_layers",//[FILL]="fillFunction",
     [ANCHORS]="anchors",[Z]="z",[ON_EVENT]="onEvent"//[TEXT]="text"
   };
-  int ref[CONFIG_COUNT];
-  if(!getRegVal(L,ref_idx,key,CONFIG_COUNT,ref)){
-    fprintf(stderr,"ERROR: failed to get values from lua's register\n");
-    error=1;
-    goto cleanup;
-  }
-  ASSIGN_FIELD(W,ref,cfg->w,number,uint32_t,cleanup,error);
-  ASSIGN_FIELD(H,ref,cfg->h,number,uint32_t,cleanup,error);
-  ASSIGN_FIELD(SX,ref,cfg->sx,number,uint32_t,cleanup,error);
-  ASSIGN_FIELD(SY,ref,cfg->sy,number,uint32_t,cleanup,error);
-  ASSIGN_FIELD(Z,ref,cfg->z,number,uint32_t,cleanup,error);
-  ASSIGN_FIELD(EMPTY,ref,cfg->empty,boolean,bool,cleanup,error);   
-  ASSIGN_FIELD(FOCUS,ref,cfg->focus,boolean,bool,cleanup,error);      
-  ASSIGN_FIELD(MOUSE,ref,cfg->mouse,boolean,bool,cleanup,error);      
-  ASSIGN_FIELD(FALLTHROUGH,ref,cfg->fallthrough,boolean,bool,cleanup,error);
-  ASSIGN_FIELD(DRAG,ref,cfg->drag,boolean,bool,cleanup,error);       
-  ASSIGN_FIELD(PRESERVE_LAYERS,ref,cfg->preserve_layers,boolean,bool,cleanup,error);
-  ASSIGN_FUNCTION(ON_EVENT,ref,cfg->onEvent);
-  if(ref[ANCHORS]!=LUA_NOREF){
+  int cfg_ref[CONFIG_COUNT];
+  ASSIGN_WRAPPER(ref_idx, cfg_key, cfg_ref, CONFIG_COUNT, error, cleanup,{
+      ASSIGN_FIELD(W,cfg_ref,cfg_key,cfg->w,number,uint32_t,cleanup,error);
+      ASSIGN_FIELD(H,cfg_ref,cfg_key,cfg->h,number,uint32_t,cleanup,error);
+      ASSIGN_FIELD(SX,cfg_ref,cfg_key,cfg->sx,number,uint32_t,cleanup,error);
+      ASSIGN_FIELD(SY,cfg_ref,cfg_key,cfg->sy,number,uint32_t,cleanup,error);
+      ASSIGN_FIELD(Z,cfg_ref,cfg_key,cfg->z,number,uint32_t,cleanup,error);
+      ASSIGN_FIELD(EMPTY,cfg_ref,cfg_key,cfg->empty,boolean,bool,cleanup,error);   
+      ASSIGN_FIELD(FOCUS,cfg_ref,cfg_key,cfg->focus,boolean,bool,cleanup,error);      
+      ASSIGN_FIELD(MOUSE,cfg_ref,cfg_key,cfg->mouse,boolean,bool,cleanup,error);      
+      ASSIGN_FIELD(FALLTHROUGH,cfg_ref,cfg_key,cfg->fallthrough,boolean,bool,cleanup,error);
+      ASSIGN_FIELD(DRAG,cfg_ref,cfg_key,cfg->drag,boolean,bool,cleanup,error);       
+      ASSIGN_FIELD(PRESERVE_LAYERS,cfg_ref,cfg_key,cfg->preserve_layers,boolean,bool,cleanup,error);
+      ASSIGN_FUNCTION(ON_EVENT,cfg_ref,cfg->onEvent);
+    });
+  if(cfg_ref[ANCHORS]!=LUA_NOREF){
     const char*anchor_key[SIDE_COUNT]={
       [TOP]="top",[BOTTOM]="bottom",
       [LEFT]="left",[RIGHT]="right"
     };
     int anchor_ref[SIDE_COUNT]={0};
-    if(!getRegVal(L,ref[ANCHORS],anchor_key,SIDE_COUNT,anchor_ref)){
+    if(!getRegVal(L,cfg_ref[ANCHORS],anchor_key,SIDE_COUNT,anchor_ref)){
       fprintf(stderr,"ERROR: failed to get values from lua's register\n");
       error=0;
       goto anchor_cleanup;
     }
-    ASSIGN_FIELD(TOP,ref,cfg->anchors.top,boolean,bool,anchor_cleanup,error);     
-    ASSIGN_FIELD(BOTTOM,ref,cfg->anchors.bottom,boolean,bool,anchor_cleanup,error);     
-    ASSIGN_FIELD(LEFT,ref,cfg->anchors.left,boolean,bool,anchor_cleanup,error);     
-    ASSIGN_FIELD(RIGHT,ref,cfg->anchors.right,boolean,bool,anchor_cleanup,error);     
+    ASSIGN_FIELD(TOP,anchor_ref,anchor_key,cfg->anchors.top,boolean,bool,anchor_cleanup,error);     
+    ASSIGN_FIELD(BOTTOM,anchor_ref,anchor_key,cfg->anchors.bottom,boolean,bool,anchor_cleanup,error);     
+    ASSIGN_FIELD(LEFT,anchor_ref,anchor_key,cfg->anchors.left,boolean,bool,anchor_cleanup,error);     
+    ASSIGN_FIELD(RIGHT,anchor_ref,anchor_key,cfg->anchors.right,boolean,bool,anchor_cleanup,error);     
 anchor_cleanup:
     for(int i=0;i<SIDE_COUNT;i++){
       if(anchor_ref[i]!=LUA_NOREF){
@@ -177,9 +183,9 @@ anchor_cleanup:
   }
 cleanup:
   for(int i=0;i<CONFIG_COUNT;i++){
-    if(ref[i]!=LUA_NOREF){
-      luaL_unref(L,LUA_REGISTRYINDEX,ref[i]);
-      ref[i]=LUA_NOREF;
+    if(cfg_ref[i]!=LUA_NOREF){
+      luaL_unref(L,LUA_REGISTRYINDEX,cfg_ref[i]);
+      cfg_ref[i]=LUA_NOREF;
     }
   }
   return error;
@@ -201,7 +207,7 @@ int assignBorder(app_state_t*app,widget_t*widget,int ref_idx){
     fprintf(stderr,"ERROR: failed to get values from lua's register\n");
     error=0;goto cleanup;
   }
-  ASSIGN_STRINGT(PATTERN,ref,bd->pattern,cleanup,error);
+  ASSIGN_STRINGT(PATTERN,ref,key,bd->pattern,cleanup,error);
   if(ref[CORNERS]!=LUA_NOREF){
     const char*corner_key[CORNER_COUNT]={
       [TOP_LEFT]="top_left",
@@ -216,7 +222,7 @@ int assignBorder(app_state_t*app,widget_t*widget,int ref_idx){
     }
     string_t**corner=bd->corners;
     for(int i=0;i<CORNER_COUNT;i++)
-      ASSIGN_STRINGT(i,corner_ref,corner[i],corner_cleanup,error);
+      ASSIGN_STRINGT(i,corner_ref,key,corner[i],corner_cleanup,error);
 corner_cleanup:
     for(int i=0;i<CORNER_COUNT;i++){
       if(corner_ref[i]!=LUA_NOREF){
@@ -256,7 +262,7 @@ corner_cleanup:
         goto side_cleanup;
       }
       for(int j=0;j<EDGE_COUNT;j++)
-        ASSIGN_STRINGT(j,edge_ref,edge[i][j],edge_cleanup,error);
+        ASSIGN_STRINGT(j,edge_ref,edge_key,edge[i][j],edge_cleanup,error);
 edge_cleanup:
       for(int j=0;j<EDGE_COUNT;j++){
         if(edge_ref[j]!=LUA_NOREF){
@@ -282,35 +288,6 @@ cleanup:
   }
   return error;
 }
-int assignContent(app_state_t*app,widget_t*widget,int ref_idx){
-  if(!widget->content)widget->content=createComponent(app, sizeof(struct content_s));
-  if(!widget->content){
-    fprintf(stderr,"ERROR: failed allocating content for widget\n");
-    return 0;
-  }
-  struct content_s*cont=widget->content;
-  lua_State*L=app->L;bool error=1;
-  int ref[CONTENT_COUNT]={0};char*key[CONTENT_COUNT]={
-    [TEXT]="text", [IMG_PATH]="image_path"
-  };
-  bool occupied=0;
-  for(int i=0;i<CONTENT_COUNT;i++){
-    bool c=ref[i]!=LUA_NOREF;
-    if(occupied&&c){
-      logError(L, "content table expected only 1 feild selected, found 2");
-      error=1;      
-      goto cleanup;
-    }
-  }
-  ASSIGN_STRINGT(TEXT,ref,cont->text,cleanup,error);
-  ASSIGN_STRINGT(IMG_PATH,ref,cont->img_path,cleanup,error);
-cleanup:
-  for(int i=0;i<CONTENT_COUNT;i++)
-    if(ref[i]!=LUA_NOREF)
-      luaL_unref(L,LUA_REGISTRYINDEX,ref[i]);
-  return error;
-}
-
 
 // idx is the table idx
 int assignWidget(app_state_t*app,widget_t*parent,int idx){
@@ -346,7 +323,15 @@ int assignWidget(app_state_t*app,widget_t*parent,int idx){
           lua_settop(L,idx);
           return 0;
         }
-      }else{
+      }
+      //else if(size==7&&!strcmp(key,"content")){
+        // if(!assignContent(app,parent,conf_ref)){
+        //   fprintf(stderr,"ERROR: failed assigning value to widget's content\n");
+        //   luaL_unref(L,LUA_REGISTRYINDEX,conf_ref);
+        //   lua_settop(L,idx);
+        //   return 0;
+        // }
+      else{
         logError(L,"unknown property table '%s'",key);
         luaL_unref(L,LUA_REGISTRYINDEX,conf_ref);
         lua_settop(L,idx);

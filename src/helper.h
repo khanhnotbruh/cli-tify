@@ -45,6 +45,7 @@ enum state_idx_e{
 enum config_idx_e{
   ID=0,
   ANCHORS,
+  CONTENT,
   W,
   H,
   SX,
@@ -61,8 +62,8 @@ enum config_idx_e{
   CONFIG_COUNT,
 };
 enum content_idx_e{
-  TEXT=0,
-  IMG_PATH,
+  CONT_TYPE=0,
+  CONT_CONTENT,
   CONTENT_COUNT,
 };
 enum memory_component_type_e{

@@ -1,3 +1,4 @@
+#include "config.h"
 #include "global_var.h"
 #include "helper.h"
 #include "ui.h"
@@ -45,9 +46,9 @@ int stringTCpy(string_t*destination,string_t*source,uint64_t size){
     uint64_t size=s->last-s->buf;
     if(size>len)size=len;
     memcpy(w,s->buf,size);
-    w+=size;
     if(len>=size)len-=size;
     else break;
+    w+=size;
     s=s->next;
   }
   return 1;
@@ -72,11 +73,18 @@ static memory_t*allocateMore(memory_t*mem,uint64_t size){
   return new;
 }
 void*createComponent(app_state_t*app,uint64_t size){
-  if(!app)return 0;
+  if(!app||!app->mem[CURR]){
+    fprintf(stderr,"CreateComponent: passed null ptr: ");
+    if(app)fprintf(stderr,"app->mem[CURR]: %p",app->mem[CURR]);
+    fprintf(stderr,"\n");
+    return 0;
+  }
   memory_t*mem=app->mem[CURR];
   if(mem->cnt+size>mem->size){
     mem=allocateMore(mem,size);
-    if(!mem)return 0;
+    if(!mem){
+      return 0;
+    }
     app->mem[CURR]=mem;
   }
   void*ans=((uint8_t*)mem->buf+mem->cnt);
@@ -186,40 +194,6 @@ widget_t*pushWidget(app_state_t*app,widget_t*widget){
   return new;
 }
 
-void freeLua(lua_State*L){
-  if(L)lua_close(L);
-}
-
-void freeMemory(memory_t*mem){
-  memory_t*c=mem;
-  while(c){
-    memory_t*n=c->next;
-    free(c->buf); free(c);
-    c=n;
-  }
-}
-void freeApp(app_state_t*app){
-  if(!app)return;
-  freeMemory(app->mem[ROOT]);
-  app->mem[ROOT]=0;
-  app->mem[CURR]=0;
-  free(app->screen);
-  freeLua(app->L);
-  freeUI();
-}
-
-void freeStringT(string_t*s){
-  if(!s)return;
-  if(s->type==FIXED)return;
-  while(s){
-    string_t*n=s->next;
-    if(s->type==DYNAMIC){
-      free(s->buf);
-      free(s);
-    }
-    s=n;
-  }
-}
 uint32_t decodeUTF(char*s,uint64_t*size){
   if(!s){
     if(size)*size=0;
@@ -241,70 +215,133 @@ uint32_t decodeUTF(char*s,uint64_t*size){
   return 0;
 }
 
-int initializeApp(app_state_t *app){
-  if(!app)app=malloc(sizeof(app_state_t));
-  if(!app){
-    fprintf(stderr,"error failed allocating memory\n");
+int initializeAppStruct(app_state_t**app){
+  if(!app)return 0;
+  if(!*app)*app=malloc(sizeof(app_state_t));
+  if(!*app){
+    fprintf(stderr,"ERROR: failed allocating memory\n");
     return 0;
   }
-  memset(app,0,sizeof(app_state_t));
+  memset(*app,0,sizeof(app_state_t));
   memory_t*mem=malloc(sizeof(memory_t));
   if(!mem){
-    fprintf(stderr,"error failed allocating memory\n");
+    fprintf(stderr,"ERROR: failed allocating memory\n");
+    free(*app);
     return 0;
   }
   mem->cnt=0;mem->size=1024;
   mem->buf=malloc(mem->size);
   if(!mem->buf){
-    fprintf(stderr,"error failed allocating memory\n");
+    fprintf(stderr,"ERROR: failed allocating memory\n");
+    free(*app);
+    free(mem);
     return 0;
   }
   mem->next=0;
-  app->mem[ROOT]=mem;
-  app->mem[CURR]=mem;
-  widget_t*screen=malloc(sizeof(widget_t));
-  if(!screen){
-    fprintf(stderr,"error failed allocating memory\n");
-    return 0;
-  }
-  memset(screen,0,sizeof(widget_t));
-  app->screen=screen;
+  (*app)->mem[ROOT]=mem;
+  (*app)->mem[CURR]=mem;
   return 1;
 }
-
-uint8_t*charBase64(char*path){
+void freeLua(lua_State*L){
+  if(L)lua_close(L);
+}
+void freeMemory(memory_t*mem){
+  memory_t*c=mem;
+  while(c){
+    memory_t*n=c->next;
+    free(c->buf); free(c);
+    c=n;
+  }
+}
+void freeStringT(string_t*s){
+  if(!s)return;
+  if(s->type==FIXED)return;
+  while(s){
+    string_t*n=s->next;
+    if(s->type==DYNAMIC){
+      free(s->buf);
+      free(s);
+    }
+    s=n;
+  }
+}
+void freeApp(app_state_t*app){
+  if(!app)return;
+  freeMemory(app->mem[ROOT]);
+  app->mem[ROOT]=0;
+  app->mem[CURR]=0;
+  free(app->screen);
+  freeLua(app->L);
+  freeUI();
+}
+int initializeApp(app_state_t *app,char*config_path){
+  if(!app)if(!initializeAppStruct(&app)){
+    fprintf(stderr,"ERROR: failed to initialize app struct\n");
+    return 0;
+  }
+  app->screen=createComponent(app,sizeof(widget_t));
+  if(!app->screen){
+    fprintf(stderr,"ERROR: failed setting up screen\n");
+    return 0;
+  }
+  memset(app->screen,0,sizeof(widget_t));
+  if(!initializeLua(app)){
+    return 0;
+  }
+  app->config_path=makeStringT(app,config_path,strlen(config_path));
+  if(!app->config_path){
+    fprintf(stderr, "ERROR: failed to setup config path\n");
+    return 0;
+  }
+  if(luaL_dofile(app->L,config_path)!=LUA_OK){
+    fprintf(stderr,"%s\n",lua_tostring(app->L,-1));
+    fprintf(stderr,"ERROR: failed to assign config file\n");
+    return 0;
+  }
+  if(!initializeUI(app)){
+    fprintf(stderr,"ERROR: failed to initialize user interface\n");
+    return 0;
+  }
+  return 1;
+}
+static const char b64_table[]=
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  "abcdefghijklmnopqrstuvwxyz"
+  "0123456789+/";
+uint8_t*charBase64(char*path,uint64_t*size){
   if(!path)return 0;
   FILE*inp=fopen(path,"rb");
   if(!inp)return 0;
   fseek(inp,0,SEEK_END);
   uint64_t len=ftell(inp);
   fseek(inp,0,SEEK_SET);
-  uint8_t*new=malloc((len/3+1)*4);
+  uint8_t*new=malloc((len/3+1)*4+3);
   if(!new){
     fprintf(stderr,"ERROR: failed to allocate memory while converting string_t to base64\n");
     return 0;
   }
   uint8_t buf[1<<12]={0};
   uint8_t*wrt=new,bit=0;
-  uint32_t tmp=0,read=0;
+  uint32_t read=0,tmp=0;
   while((read=fread(buf,1,1<<12,inp))>0){
     for(int j=0;j<read;j++){
       uint8_t c=buf[j];
-      if(c>='A'&&c<='Z')c-='A';
-      else if(c>='0'&&c<='9')c=c-'0'+52;
-      else if(c>='a'&&c<='z')c=c-'a'+26;
-      else if(c=='+')c=62;
-      else if(c=='/')c=63;
-      else continue;
-      tmp=(tmp<<6)|c;
-      bit+=6;
-      if(bit>=8){
-        bit-=8;
-        *(wrt++)=(tmp>>bit)&0xFF;
+      tmp=((tmp<<8)|c)&0xFFFFFFFF;
+      bit+=8;
+      while(bit>=6){
+        bit-=6;
+        *(wrt++)=b64_table[(tmp>>bit)&0x3F];
       }
     }
   }
+  if(bit>0){
+    tmp<<=6-bit;
+    *(wrt++)=b64_table[tmp&0x3F];
+    for(int i=0;i<(6-bit)/2;i++)
+      *(wrt++)='=';
+  }
   *wrt='\0';
+  if(size)*size=wrt-new;
   fclose(inp);
   return new;
 }

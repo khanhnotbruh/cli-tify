@@ -1,5 +1,8 @@
 #ifndef GLOBAL_H
 #define GLOBAL_H
+
+
+
 #include <luajit-2.1/lua.h>
 #include <luajit-2.1/lualib.h>
 #include <luajit-2.1/lauxlib.h>
@@ -50,9 +53,17 @@ struct state_s{
     };
   };
 }; 
+enum content_type_e{
+  TYPE_TEXT=0,
+  TYPE_IMAGE,
+};
 struct config_s{
   uint32_t w,h,sx,sy,z;
   int  onEvent;
+  struct {
+    enum content_type_e type;
+    string_t*payload;
+  }content;
   union{
     uint16_t raw;
     struct{
@@ -70,12 +81,6 @@ struct config_s{
         uint16_t right  : 1;
       }anchors;
     };
-  };
-};
-struct content_s{
-  union{
-    string_t*text;
-    string_t*img_path;
   };
 };
 typedef struct widget_t{
@@ -121,7 +126,7 @@ string_t*pushStringT(app_state_t*app,string_t*s);
 string_t*makeStringT(app_state_t*app,char*s,uint64_t size);
 struct border_s*pushBorder(app_state_t*app,struct border_s*border);
 struct config_s*pushConfig(app_state_t*app,struct config_s*config);
-int initializeApp(app_state_t*app);
+int initializeApp(app_state_t*app,char*config_path);
 // harmless function
 void handleEvent(app_state_t*app,int event);
 void freeLua(lua_State*L);
@@ -131,6 +136,6 @@ int dumpConfig(struct config_s *conf,int level);
 int dumpWidget(widget_t *root,int level);
 
 uint32_t decodeUTF(char*s,uint64_t*size);
-uint8_t*charBase64(char*path);
+uint8_t*charBase64(char*path,uint64_t*size);
 int putImage(char*path);
 #endif
