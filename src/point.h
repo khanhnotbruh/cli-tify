@@ -1,6 +1,9 @@
 #ifndef POINT_H
 #define POINT_H
 #include <stdint.h>
+
+
+
 struct point_s{ int32_t x,y; };
 static inline struct point_s point_s_Create(int32_t x,int32_t y){
   return (struct point_s){.x=x,.y=y,};
@@ -19,7 +22,7 @@ static inline bool point_s_Validate(struct point_s a){
   point_s:_Generic((b),\
     point_s:point_s_AddPoint(a,b),\
     int32_t:point_s_AddScalar(a,b)\
-  ),\
+  )(b),\
 )(a,b);
 // struct size_s{ uint32_t h,w; };
 // inline struct size_s size_s_Create(int32_t h,int32_t w);
