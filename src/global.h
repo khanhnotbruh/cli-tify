@@ -8,6 +8,7 @@
     (((i) > 0 || (i) <= LUA_REGISTRYINDEX) ? (i) : lua_gettop(L) + (i) + 1)
 #endif
 #include "point.h"
+#include "type.h"
 #include "rectangle.h"
 #include "color/color.h"
 #endif//GLOBAL_H
